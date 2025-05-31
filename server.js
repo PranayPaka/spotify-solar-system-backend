@@ -4,11 +4,10 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
 
-// Load .env file
-const env = dotenv.config({ path: path.resolve(__dirname, ".env") });
-if (env.error) {
-  console.error("Failed to load .env file:", env.error.message);
-  process.exit(1);
+// Load .env file if present (but don’t exit if missing)
+const envResult = dotenv.config({ path: path.resolve(__dirname, ".env") });
+if (envResult.error) {
+  console.warn("No .env file found or failed to load. Assuming env vars set in environment.");
 }
 
 const app = express();
@@ -17,15 +16,15 @@ app.use(express.json());
 
 const CLIENT_ID = process.env.CLIENT_ID;
 const CLIENT_SECRET = process.env.CLIENT_SECRET;
-const REDIRECT_URI =
-  process.env.REDIRECT_URI || "http://127.0.0.1:5000/redirect";
+const REDIRECT_URI = process.env.REDIRECT_URI || "http://127.0.0.1:5000/redirect";
 const FRONTEND_URI = process.env.FRONTEND_URI || "http://localhost:5173";
 
 if (!CLIENT_ID || !CLIENT_SECRET) {
   console.error(
-    "Error: CLIENT_ID and CLIENT_SECRET must be defined in .env file"
+    "Error: CLIENT_ID and CLIENT_SECRET must be defined in environment variables"
   );
-  process.exit(1);
+  // You can either exit or just warn and continue:
+  // process.exit(1);
 }
 
 app.get("/", (req, res) => {
@@ -75,7 +74,6 @@ app.get("/redirect", async (req, res) => {
       access_token.substring(0, 10) + "..."
     );
     console.log("Refresh token obtained:", refresh_token ? "Yes" : "No");
-    // You can send both tokens to frontend if you want
     res.redirect(
       `${FRONTEND_URI}/?access_token=${access_token}&refresh_token=${refresh_token}`
     );
@@ -140,7 +138,6 @@ app.get("/top-tracks", async (req, res) => {
         .json({ message: "No top tracks available", data: [] });
     }
 
-    // Just send relevant track info — no audio features
     const data = topTracks.map((track, index) => ({
       rank: index + 1,
       name: track.name,
@@ -173,6 +170,7 @@ app.use((err, req, res, next) => {
 });
 
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, "127.0.0.1", () => {
-  console.log(`Server running on http://127.0.0.1:${PORT}`);
+// Listen on all network interfaces, not just localhost (important for cloud deploy)
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
 });
