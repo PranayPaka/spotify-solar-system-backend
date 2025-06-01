@@ -58,7 +58,7 @@ app.get("/", (req, res) => {
   res.status(200).json({ 
     message: "Spotify Solar System Backend is running!",
     status: "active",
-    endpoints: ["/login", "/redirect", "/me", "/top-tracks", "/health"]
+    endpoints: ["/login", "/redirect", "/me", "/top-tracks", "/health", "/recent-tracks"]
   });
 });
 
@@ -69,7 +69,7 @@ app.get("/login", (req, res) => {
     return res.status(500).json({ error: "Spotify CLIENT_ID not configured" });
   }
   
-  const scope = "user-top-read user-read-private";
+  const scope = "user-top-read user-read-private user-read-recently-played";
   const authUrl = new URL("https://accounts.spotify.com/authorize");
   authUrl.searchParams.append("response_type", "code");
   authUrl.searchParams.append("client_id", CLIENT_ID);
@@ -181,13 +181,30 @@ app.get("/top-tracks", async (req, res) => {
       }
     );
 
+    // ADD DETAILED LOGGING HERE
+    console.log("=== SPOTIFY API RESPONSE DEBUG ===");
+    console.log("Response Status:", response.status);
+    console.log("Full Response Data:", JSON.stringify(response.data, null, 2));
+    console.log("Items Array:", response.data.items);
+    console.log("Items Length:", response.data.items ? response.data.items.length : 'No items property');
+    console.log("Total Available:", response.data.total);
+    console.log("=====================================");
+
     const topTracks = response.data.items;
     if (!topTracks || !topTracks.length) {
       console.warn("No top tracks found for user");
+      console.log("Response data keys:", Object.keys(response.data));
+      console.log("Total from API:", response.data.total);
+      
       return res.status(200).json({ 
         message: "No top tracks available", 
         data: [],
-        total: 0
+        total: 0,
+        debug_info: {
+          api_total: response.data.total,
+          time_range: timeRange,
+          response_keys: Object.keys(response.data)
+        }
       });
     }
 
@@ -206,6 +223,8 @@ app.get("/top-tracks", async (req, res) => {
       duration_ms: track.duration_ms
     }));
 
+    console.log("Successfully processed", data.length, "tracks");
+
     res.json({
       tracks: data,
       total: data.length,
@@ -213,16 +232,56 @@ app.get("/top-tracks", async (req, res) => {
     });
     
   } catch (err) {
-    console.error("Failed to fetch top tracks:", {
-      error: err.response?.data?.error || err.message,
-      status: err.response?.status || "No status",
-      requestUrl: err.config?.url || "Unknown",
-    });
+    console.error("=== SPOTIFY API ERROR DEBUG ===");
+    console.error("Error Status:", err.response?.status);
+    console.error("Error Data:", JSON.stringify(err.response?.data, null, 2));
+    console.error("Request URL:", err.config?.url);
+    console.error("Full Error:", err.message);
+    console.error("================================");
 
     res.status(err.response?.status || 400).json({
       error: "Failed to fetch top tracks",
       details: err.response?.data?.error?.message || err.message,
       status: err.response?.status || 400,
+      debug_info: {
+        spotify_error: err.response?.data,
+        request_url: err.config?.url
+      }
+    });
+  }
+});
+
+// Add recent tracks endpoint for testing
+app.get("/recent-tracks", async (req, res) => {
+  const token = req.query.access_token?.trim() || req.headers.authorization?.replace('Bearer ', '');
+  
+  if (!token) {
+    return res.status(400).json({ error: "Access token required" });
+  }
+
+  console.log("Fetching recent tracks with token:", token.substring(0, 10) + "...");
+
+  try {
+    const response = await axios.get(
+      `https://api.spotify.com/v1/me/player/recently-played?limit=10`,
+      {
+        headers: {
+          Authorization: `Bearer ${token}`,
+          Accept: "application/json"
+        }
+      }
+    );
+
+    console.log("=== RECENT TRACKS RESPONSE ===");
+    console.log("Recent tracks response:", JSON.stringify(response.data, null, 2));
+    console.log("===============================");
+    
+    res.json(response.data);
+  } catch (err) {
+    console.error("Recent tracks error:", err.response?.data);
+    res.status(err.response?.status || 400).json({
+      error: "Failed to fetch recent tracks",
+      details: err.response?.data
     });
   }
 });
@@ -275,7 +334,7 @@ app.use((err, req, res, next) => {
 app.use((req, res) => {
   res.status(404).json({ 
     error: "Endpoint not found",
-    available_endpoints: ["/", "/login", "/redirect", "/me", "/top-tracks", "/health"]
+    available_endpoints: ["/", "/login", "/redirect", "/me", "/top-tracks", "/recent-tracks", "/health"]
   });
 });
 
